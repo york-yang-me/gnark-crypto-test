@@ -18,13 +18,15 @@ limitations under the License.
 //
 // Also
 //
-//	* Multi exponentiation
-//	* FFT
-//	* Polynomial commitment schemes
-//	* MiMC
-//	* twisted edwards "companion curves"
-//	* EdDSA (on the "companion" twisted edwards curves)
+//   - Multi exponentiation
+//   - FFT
+//   - Polynomial commitment schemes
+//   - MiMC
+//   - twisted edwards "companion curves"
+//   - EdDSA (on the "companion" twisted edwards curves)
 package ecc
+
+import "sync"
 
 // ID represent a unique ID for a curve
 type ID uint16
@@ -38,11 +40,12 @@ const (
 	BLS24_315
 	BW6_761
 	BW6_633
+	BW6_767
 )
 
 // Implemented return the list of curves fully implemented in gnark-crypto
 func Implemented() []ID {
-	return []ID{BN254, BLS12_377, BLS12_381, BW6_761, BLS24_315}
+	return []ID{BN254, BLS12_377, BLS12_381, BW6_761, BLS24_315, BW6_767}
 }
 
 func (id ID) String() string {
@@ -59,6 +62,8 @@ func (id ID) String() string {
 		return "bw6_633"
 	case BLS24_315:
 		return "bls24_315"
+	case BW6_767:
+		return "bw6_767"
 	default:
 		panic("unimplemented ecc ID")
 	}
@@ -66,6 +71,27 @@ func (id ID) String() string {
 
 // MultiExpConfig enables to set optional configuration attribute to a call to MultiExp
 type MultiExpConfig struct {
-	NbTasks     int  // go routines to be used in the multiexp. can be larger than num cpus.
-	ScalarsMont bool // indicates if the scalars are in montgommery form. Default to false.
+	CPUSemaphore *CPUSemaphore
+	NbTasks      int  // go routines to be used in the multiexp. can be larger than num cpus.
+	ScalarsMont  bool // indicates if the scalars are in montgommery form. Default to false.
+}
+
+// CPUSemaphore enables users to set optional number of CPUs the multiexp will use
+// this is thread safe and can be used accross parallel calls of MultiExp
+type CPUSemaphore struct {
+	ChCPU chan struct{} // semaphore to limit number of cpus iterating through points and scalrs at the same time
+	Lock  sync.Mutex
+}
+
+// NewCPUSemaphore returns a new multiExp options to be used with MultiExp
+// this option can be shared between different MultiExp calls and will ensure only numCpus are used
+// through a semaphore
+func NewCPUSemaphore(numCpus int) *CPUSemaphore {
+	toReturn := &CPUSemaphore{
+		ChCPU: make(chan struct{}, numCpus),
+	}
+	for i := 0; i < numCpus; i++ {
+		toReturn.ChCPU <- struct{}{}
+	}
+	return toReturn
 }
